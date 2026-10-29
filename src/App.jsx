@@ -133,6 +133,7 @@ export default function App() {
     return (
       <div className="app">
         <div className="loading">
+          <img src="/logo-eic.png" alt="Logo EIC" className="loading-logo" />
           <div className="spinner"></div>
           <p>Cargando inventario...</p>
         </div>
@@ -144,8 +145,11 @@ export default function App() {
     <div className="app">
       {/* Header */}
       <header className="header">
-        <h1>📋 Inventario EIC</h1>
-        <p>Sistema de Ordenamiento de Bienes</p>
+        <img src="/logo-eic.png" alt="Escuela de Investigación Criminal" className="header-logo" />
+        <div className="header-text">
+          <h1>Escuela de Investigación Criminal · EIC</h1>
+          <p>Sistema de Verificación y Ordenamiento de Bienes</p>
+        </div>
       </header>
 
       {/* Stats */}

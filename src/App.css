@@ -34,21 +34,46 @@ body {
 
 /* Header */
 .header {
-  text-align: center;
-  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 20px 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 24px;
 }
 
+.header-logo {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.4));
+  flex-shrink: 0;
+}
+
+.header-text {
+  text-align: left;
+}
+
 .header h1 {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   font-weight: 700;
   margin-bottom: 4px;
+  letter-spacing: -0.3px;
 }
 
 .header p {
   color: var(--text-muted);
   font-size: 0.875rem;
+}
+
+.loading-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  margin: 0 auto 16px;
+  display: block;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
 }
 
 /* Stats bar */
@@ -562,6 +587,22 @@ body {
 @media (max-width: 768px) {
   .app {
     padding: 12px;
+  }
+
+  .header {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .header-text {
+    text-align: center;
+  }
+
+  .header-logo {
+    width: 60px;
+    height: 60px;
   }
 
   .stats-bar {
