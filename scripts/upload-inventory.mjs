@@ -35,9 +35,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 async function upload() {
-  const jsonPath = join(__dirname, '../inventory_data.json');
+  const jsonPath = join(__dirname, '../inventory_data_merged.json');
   const data = JSON.parse(readFileSync(jsonPath, 'utf8'));
-  console.log(`Subiendo ${data.length} bienes a Firestore...`);
+  console.log(`Subiendo ${data.length} bienes (incluyendo repetidos) a Firestore...`);
   
   // Firestore batch write limit is 500 per batch
   const BATCH_SIZE = 400;
@@ -46,15 +46,18 @@ async function upload() {
     const batch = writeBatch(db);
     const chunk = data.slice(i, i + BATCH_SIZE);
     
-    chunk.forEach((item, idx) => {
-      const id = `item_${i + idx + 1}`;
-      const ref = doc(db, 'bienes', id);
+    chunk.forEach((item) => {
+      const ref = doc(db, 'bienes', item.id);
       batch.set(ref, {
         code: item.code,
+        originalCode: item.originalCode || item.code,
         name: item.name,
         location: item.location,
-        status: 'pending',
-        foundLocation: null
+        status: item.status || 'pending',
+        foundLocation: item.foundLocation || null,
+        isRepeated: !!item.isRepeated,
+        isSinCodigo: !!item.isSinCodigo,
+        source: item.source || 'principal'
       });
     });
     
@@ -62,7 +65,7 @@ async function upload() {
     console.log(`  ✓ Lote ${Math.floor(i / BATCH_SIZE) + 1}: items ${i + 1}-${Math.min(i + BATCH_SIZE, data.length)}`);
   }
   
-  console.log('✅ ¡Inventario subido exitosamente!');
+  console.log('✅ ¡Inventario completo subido exitosamente a Firestore!');
   process.exit(0);
 }
 
