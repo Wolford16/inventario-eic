@@ -3,11 +3,8 @@ import { db } from './firebase'
 import {
   collection,
   doc,
-  getDocs,
   setDoc,
   updateDoc,
-  deleteDoc,
-  writeBatch,
   onSnapshot
 } from 'firebase/firestore'
 import './App.css'
@@ -20,6 +17,7 @@ export default function App() {
   const [tab, setTab] = useState('ubicaciones') // 'ubicaciones' | 'repetidos' | 'desplazados' | 'agregar'
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'pending' | 'verified' | 'repeated' | 'missing'
   const [repFilterCode, setRepFilterCode] = useState('all')
 
   // Modals
@@ -42,7 +40,7 @@ export default function App() {
     return () => unsub()
   }, [])
 
-  // Map of repeated codes in current active items
+  // Map of repeated codes in current items
   const repeatedCodeGroups = useMemo(() => {
     const groups = {}
     items.forEach(item => {
@@ -52,7 +50,6 @@ export default function App() {
       groups[c].push(item)
     })
 
-    // Filter only those with more than 1 item or flagged as isRepeated
     const result = {}
     Object.entries(groups).forEach(([c, list]) => {
       if (list.length > 1 || list.some(i => i.isRepeated)) {
@@ -62,22 +59,19 @@ export default function App() {
     return result
   }, [items])
 
-  // Set of codes currently repeated
   const repeatedCodesSet = useMemo(() => {
     return new Set(Object.keys(repeatedCodeGroups))
   }, [repeatedCodeGroups])
 
-  // Total count of items that are in repeated code groups
   const repeatedItemsList = useMemo(() => {
     const list = []
     Object.values(repeatedCodeGroups).forEach(group => {
       group.forEach(item => list.push(item))
     })
-    // Sort by code, then by location
     return list.sort((a, b) => a.code.localeCompare(b.code) || a.location.localeCompare(b.location))
   }, [repeatedCodeGroups])
 
-  // Derived locations
+  // Locations summary
   const locations = useMemo(() => {
     const map = {}
     items.forEach(item => {
@@ -107,10 +101,18 @@ export default function App() {
     return [...new Set(items.map(i => i.location))].filter(Boolean).sort()
   }, [items])
 
+  // Filtered items inside a location
   const filteredItems = useMemo(() => {
     let list = items
     if (selectedLocation) {
       list = list.filter(i => i.location === selectedLocation)
+    }
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'repeated') {
+        list = list.filter(i => repeatedCodesSet.has(i.code))
+      } else {
+        list = list.filter(i => (i.status || 'pending') === statusFilter)
+      }
     }
     if (search) {
       const s = search.toLowerCase()
@@ -120,7 +122,7 @@ export default function App() {
       )
     }
     return list
-  }, [items, selectedLocation, search])
+  }, [items, selectedLocation, statusFilter, search, repeatedCodesSet])
 
   const displacedItems = useMemo(() => {
     return items.filter(i => i.status === 'displaced')
@@ -216,7 +218,7 @@ export default function App() {
         <div className="loading">
           <img src="/logo-eic.png" alt="Logo EIC" className="loading-logo" />
           <div className="spinner"></div>
-          <p>Cargando inventario...</p>
+          <p>Cargando inventario EIC...</p>
         </div>
       </div>
     )
@@ -224,134 +226,177 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Header */}
+      {/* Header Compacto y Mobile-Friendly */}
       <header className="header">
         <img src="/logo-eic.png" alt="Escuela de Investigación Criminal" className="header-logo" />
         <div className="header-text">
-          <h1>Escuela de Investigación Criminal · EIC</h1>
-          <p>Sistema de Verificación y Ordenamiento de Bienes</p>
+          <h1>Inventario EIC</h1>
+          <p>Ordenamiento y Verificación Física</p>
         </div>
       </header>
 
-      {/* Stats Bar */}
+      {/* Stats Bar Responsive */}
       <div className="stats-bar">
-        <div className="stat">
+        <div className="stat" onClick={() => { setTab('ubicaciones'); setSelectedLocation(null); setStatusFilter('all'); }}>
           <div className="stat-number">{stats.total}</div>
           <div className="stat-label">Total</div>
         </div>
-        <div className="stat">
+        <div className="stat" onClick={() => { setTab('ubicaciones'); setStatusFilter('verified'); }}>
           <div className="stat-number verified">{stats.verified}</div>
           <div className="stat-label">Verificados</div>
         </div>
-        <div className="stat">
-          <div className="stat-number missing">{stats.missing}</div>
-          <div className="stat-label">No encontrados</div>
-        </div>
-        <div className="stat">
-          <div className="stat-number displaced">{stats.displaced}</div>
-          <div className="stat-label">Desplazados</div>
-        </div>
-        <div className="stat">
+        <div className="stat" onClick={() => setTab('repetidos')}>
           <div className="stat-number repeated">{stats.repeated}</div>
           <div className="stat-label">Repetidos</div>
         </div>
-        <div className="stat">
+        <div className="stat" onClick={() => setTab('desplazados')}>
+          <div className="stat-number displaced">{stats.displaced}</div>
+          <div className="stat-label">Desplazados</div>
+        </div>
+        <div className="stat" onClick={() => { setTab('ubicaciones'); setStatusFilter('missing'); }}>
+          <div className="stat-number missing">{stats.missing}</div>
+          <div className="stat-label">No están</div>
+        </div>
+        <div className="stat" onClick={() => { setTab('ubicaciones'); setStatusFilter('pending'); }}>
           <div className="stat-number pending">{stats.pending}</div>
           <div className="stat-label">Pendientes</div>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="tabs">
+      {/* Tabs */}
+      <nav className="tabs">
         <button
           className={`tab ${tab === 'ubicaciones' ? 'active' : ''}`}
-          onClick={() => { setTab('ubicaciones'); setSelectedLocation(null) }}
+          onClick={() => { setTab('ubicaciones'); setSelectedLocation(null); setStatusFilter('all'); }}
         >
           📍 Ubicaciones
         </button>
         <button
-          className={`tab tab-repeated ${tab === 'repetidos' ? 'active' : ''}`}
+          className={`tab tab-rep ${tab === 'repetidos' ? 'active' : ''}`}
           onClick={() => setTab('repetidos')}
         >
-          🔁 Códigos Repetidos ({stats.repeated})
+          🔁 Repetidos {stats.repeated > 0 && <span className="tab-pill">{stats.repeated}</span>}
         </button>
         <button
           className={`tab ${tab === 'desplazados' ? 'active' : ''}`}
           onClick={() => setTab('desplazados')}
         >
-          ⚠️ Desplazados ({displacedItems.length})
+          ⚠️ Desplazados {displacedItems.length > 0 && <span className="tab-pill">{displacedItems.length}</span>}
         </button>
         <button
           className={`tab ${tab === 'agregar' ? 'active' : ''}`}
           onClick={() => setTab('agregar')}
         >
-          ➕ Agregar Bien
+          ➕ Nuevo
         </button>
-      </div>
+      </nav>
 
-      {/* TAB: Ubicaciones (Grid) */}
+      {/* TAB: Ubicaciones (Grid de áreas) */}
       {tab === 'ubicaciones' && !selectedLocation && (
-        <div className="locations-grid">
-          {locations.map(([loc, counts]) => (
-            <div key={loc} className="location-card" onClick={() => setSelectedLocation(loc)}>
-              <div className="location-card-top">
-                <h3>{loc}</h3>
-                {counts.repeatedCount > 0 && (
-                  <span className="badge-rep-pill" title={`${counts.repeatedCount} bien(es) con código repetido aquí`}>
-                    🔁 {counts.repeatedCount} repetido{counts.repeatedCount > 1 ? 's' : ''}
-                  </span>
-                )}
+        <div>
+          <div className="locations-summary-header">
+            <span>Selecciona un área para auditar ({locations.length} ubicaciones):</span>
+          </div>
+          <div className="locations-grid">
+            {locations.map(([loc, counts]) => (
+              <div key={loc} className="location-card" onClick={() => { setSelectedLocation(loc); setStatusFilter('all'); setSearch(''); }}>
+                <div className="location-card-top">
+                  <h3 className="location-name">{loc}</h3>
+                  {counts.repeatedCount > 0 && (
+                    <span className="badge-rep-pill" title={`${counts.repeatedCount} bien(es) con código repetido aquí`}>
+                      🔁 {counts.repeatedCount} rep.
+                    </span>
+                  )}
+                </div>
+
+                <div className="location-stats">
+                  <span className="stat-tag ok">✓ {counts.verified}</span>
+                  {counts.missing > 0 && <span className="stat-tag no">✗ {counts.missing}</span>}
+                  {counts.displaced > 0 && <span className="stat-tag warn">⚠ {counts.displaced}</span>}
+                  <span className="stat-tag count">{counts.total} bienes</span>
+                </div>
+
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${counts.total ? ((counts.verified / counts.total) * 100) : 0}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="location-stats">
-                <span><span className="dot green"></span> {counts.verified}</span>
-                <span><span className="dot red"></span> {counts.missing}</span>
-                <span><span className="dot yellow"></span> {counts.displaced}</span>
-                <span><span className="dot gray"></span> {counts.pending}</span>
-                <span style={{ marginLeft: 'auto' }}>{counts.total} bienes</span>
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${counts.total ? ((counts.verified / counts.total) * 100) : 0}%` }}
-                ></div>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
-      {/* TAB: Ubicaciones (Items list for a location) */}
+      {/* TAB: Items de una Ubicación */}
       {tab === 'ubicaciones' && selectedLocation && (
-        <div>
-          <button className="back-btn" onClick={() => setSelectedLocation(null)}>
-            ← Volver a ubicaciones
-          </button>
-          <div className="items-header">
-            <div>
-              <h2>{selectedLocation}</h2>
-              {(() => {
-                const repInThisLoc = filteredItems.filter(i => repeatedCodesSet.has(i.code)).length
-                if (repInThisLoc > 0) {
-                  return (
-                    <div className="loc-rep-alert">
-                      ℹ️ Hay <strong>{repInThisLoc} bienes</strong> con supuestos códigos repetidos en esta área.
-                    </div>
-                  )
-                }
-                return null
-              })()}
-            </div>
+        <div className="location-detail-view">
+          <div className="location-top-bar">
+            <button className="back-btn" onClick={() => setSelectedLocation(null)}>
+              ← Volver
+            </button>
+            <h2 className="location-title">{selectedLocation}</h2>
+          </div>
+
+          {/* Alerta de repetidos en esta ubicación */}
+          {(() => {
+            const repHere = items.filter(i => i.location === selectedLocation && repeatedCodesSet.has(i.code)).length
+            if (repHere > 0) {
+              return (
+                <div className="loc-rep-alert" onClick={() => setStatusFilter(statusFilter === 'repeated' ? 'all' : 'repeated')}>
+                  <span>🔁 Hay <strong>{repHere} bienes</strong> con códigos repetidos en esta área.</span>
+                  <button className="alert-btn">
+                    {statusFilter === 'repeated' ? 'Ver todos' : 'Filtrar repetidos'}
+                  </button>
+                </div>
+              )
+            }
+            return null
+          })()}
+
+          {/* Barra de Filtros y Búsqueda */}
+          <div className="filter-search-bar">
             <input
+              type="search"
               className="search-box"
-              placeholder="Buscar por código o nombre..."
+              placeholder="🔍 Buscar código o nombre..."
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <div className="quick-filters">
+              <button
+                className={`filter-chip ${statusFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setStatusFilter('all')}
+              >
+                Todos
+              </button>
+              <button
+                className={`filter-chip ${statusFilter === 'pending' ? 'active' : ''}`}
+                onClick={() => setStatusFilter('pending')}
+              >
+                Pendientes
+              </button>
+              <button
+                className={`filter-chip ${statusFilter === 'verified' ? 'active' : ''}`}
+                onClick={() => setStatusFilter('verified')}
+              >
+                Verificados
+              </button>
+              <button
+                className={`filter-chip ${statusFilter === 'repeated' ? 'active' : ''}`}
+                onClick={() => setStatusFilter('repeated')}
+              >
+                Repetidos
+              </button>
+            </div>
           </div>
 
+          {/* Lista de bienes con diseño tarjeta optimizado para celular */}
           <div className="items-list">
             {filteredItems.length === 0 && (
-              <div className="empty-state">No se encontraron bienes</div>
+              <div className="empty-state">
+                No hay bienes con los filtros seleccionados ({search || statusFilter}).
+              </div>
             )}
             {filteredItems.map(item => {
               const isRep = repeatedCodesSet.has(item.code)
@@ -360,71 +405,80 @@ export default function App() {
               return (
                 <div
                   key={item.id}
-                  className={`item-row ${item.status || 'pending'} ${isRep ? 'has-repeated-code' : ''}`}
+                  className={`item-card ${item.status || 'pending'} ${isRep ? 'is-repeated-border' : ''}`}
                 >
-                  <input
-                    type="checkbox"
-                    className="item-check"
-                    checked={item.status === 'verified'}
-                    onChange={() => toggleVerify(item)}
-                    title="Marcar como verificado físicamente"
-                  />
-                  <div className="item-code-col">
-                    <span className="item-code">{item.code}</span>
-                    {isRep && (
-                      <span
-                        className="badge-repeated"
-                        title={`Este código aparece ${countInAll} veces en el inventario. Puede ser error tipográfico.`}
-                      >
-                        🔁 Repetido ({countInAll}x)
+                  {/* Fila superior: Checkbox + Código + Badges */}
+                  <div className="item-card-header">
+                    <label className="checkbox-touch-area" title="Marcar como verificado">
+                      <input
+                        type="checkbox"
+                        className="item-check"
+                        checked={item.status === 'verified'}
+                        onChange={() => toggleVerify(item)}
+                      />
+                      <span className="item-code-text">{item.code}</span>
+                    </label>
+
+                    <div className="item-badges">
+                      {isRep && (
+                        <span className="badge-repeated" title={`Este código se repite ${countInAll} veces`}>
+                          🔁 Rep. ({countInAll}x)
+                        </span>
+                      )}
+                      {item.codeCorrected && (
+                        <span className="badge-corrected">✓ Corregido</span>
+                      )}
+                      <span className={`status-badge ${item.status || 'pending'}`}>
+                        {item.status === 'verified' && '✓ En sitio'}
+                        {item.status === 'missing' && '✗ No está'}
+                        {item.status === 'displaced' && `⚠ En: ${item.foundLocation}`}
+                        {(!item.status || item.status === 'pending') && 'Pendiente'}
                       </span>
-                    )}
-                    {item.codeCorrected && (
-                      <span className="badge-corrected" title="Código corregido">
-                        ✓ Corregido
-                      </span>
-                    )}
+                    </div>
                   </div>
-                  <span className="item-name">{item.name}</span>
-                  <span className={`status-badge ${item.status || 'pending'}`}>
-                    {item.status === 'verified' && '✓ Verificado'}
-                    {item.status === 'missing' && '✗ No está'}
-                    {item.status === 'displaced' && `⚠ En: ${item.foundLocation}`}
-                    {(!item.status || item.status === 'pending') && 'Pendiente'}
-                  </span>
-                  <div className="item-actions">
+
+                  {/* Nombre / Descripción */}
+                  <div className="item-card-body">
+                    <p className="item-name-text">{item.name}</p>
+                  </div>
+
+                  {/* Botonera de acciones rápida para touch */}
+                  <div className="item-card-actions">
                     <button
-                      className="btn-sm btn-edit-code"
+                      className="touch-btn code"
                       onClick={() => openEditCodeModal(item)}
-                      title="Cambiar o corregir código"
+                      title="Cambiar código por error tipográfico"
                     >
                       ✏️ Código
                     </button>
+
                     {item.status !== 'displaced' && (
                       <button
-                        className="btn-sm warning"
+                        className="touch-btn warn"
                         onClick={() => openDisplaceModal(item)}
-                        title="Está en otra ubicación"
+                        title="Está en otra área"
                       >
-                        Desplazado
+                        🚚 Está en otro lado
                       </button>
                     )}
+
                     {item.status !== 'missing' && item.status !== 'verified' && (
                       <button
-                        className="btn-sm danger"
+                        className="touch-btn danger"
                         onClick={() => markMissing(item)}
-                        title="No se encontró"
+                        title="No encontrado"
                       >
-                        No está
+                        ✗ No está
                       </button>
                     )}
+
                     {(item.status === 'missing' || item.status === 'displaced') && (
                       <button
-                        className="btn-sm"
+                        className="touch-btn reset"
                         onClick={() => resetItem(item)}
-                        title="Resetear estado"
+                        title="Reiniciar a pendiente"
                       >
-                        Reset
+                        ↺ Reset
                       </button>
                     )}
                   </div>
@@ -435,21 +489,19 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB: Códigos Repetidos (Dedicated Section) */}
+      {/* TAB: Códigos Repetidos */}
       {tab === 'repetidos' && (
         <div className="repeated-panel">
           <div className="repeated-panel-header">
-            <div>
-              <h2>🔁 Apartado de Códigos Supuestamente Repetidos</h2>
-              <p className="subtitle">
-                Aquí ves todos los bienes cuyo código figura más de una vez. Al verificar físicamente, si descubres
-                que tenía otro código o era un error de dedo, puedes cambiarlo directamente con <strong>"Cambiar Código"</strong>.
-              </p>
-            </div>
-            <div className="repeated-filter-group">
-              <label>Filtrar por código:</label>
+            <h2>🔁 Códigos Repetidos</h2>
+            <p className="subtitle">
+              Bienes con el mismo código. Si al revisarlo físicamente ves que fue un error de dedo o tiene otra placa, pulsa <strong>"Cambiar Código"</strong> para corregirlo.
+            </p>
+
+            <div className="rep-selector-box">
+              <label>Grupo de código:</label>
               <select value={repFilterCode} onChange={e => setRepFilterCode(e.target.value)}>
-                <option value="all">Todos los grupos ({Object.keys(repeatedCodeGroups).length})</option>
+                <option value="all">Ver todos los grupos ({Object.keys(repeatedCodeGroups).length})</option>
                 {Object.keys(repeatedCodeGroups).sort().map(c => (
                   <option key={c} value={c}>
                     Código {c} ({repeatedCodeGroups[c].length} bienes)
@@ -471,37 +523,30 @@ export default function App() {
                 .map(([code, groupItems]) => (
                   <div key={code} className="rep-group-card">
                     <div className="rep-group-header">
-                      <div className="rep-group-title">
-                        <span className="rep-code-title">Código: {code}</span>
-                        <span className="rep-count-tag">{groupItems.length} bienes con este código</span>
+                      <div className="rep-code-title">
+                        <span>Código: <strong>{code}</strong></span>
+                        <span className="rep-count-tag">{groupItems.length} bienes</span>
                       </div>
-                      <div className="rep-locations-list">
-                        Ubicaciones: {[...new Set(groupItems.map(i => i.location))].join(' • ')}
+                      <div className="rep-locations-pills">
+                        {[...new Set(groupItems.map(i => i.location))].map(l => (
+                          <span key={l} className="loc-pill">📍 {l}</span>
+                        ))}
                       </div>
                     </div>
 
-                    <div className="rep-items-table">
-                      {groupItems.map((item, idx) => (
-                        <div key={item.id} className={`rep-item-row ${item.status || 'pending'}`}>
-                          <div className="rep-col-check">
-                            <input
-                              type="checkbox"
-                              className="item-check"
-                              checked={item.status === 'verified'}
-                              onChange={() => toggleVerify(item)}
-                              title="Marcar como verificado físicamente"
-                            />
-                          </div>
-                          <div className="rep-col-info">
-                            <div className="rep-item-loc">📍 <strong>{item.location}</strong></div>
-                            <div className="rep-item-name">{item.name}</div>
-                            {item.originalCode && item.code !== item.originalCode && (
-                              <div className="rep-prev-code">
-                                Código anterior: <s>{item.originalCode}</s>
-                              </div>
-                            )}
-                          </div>
-                          <div className="rep-col-status">
+                    <div className="rep-items-list">
+                      {groupItems.map(item => (
+                        <div key={item.id} className={`rep-item-card ${item.status || 'pending'}`}>
+                          <div className="rep-card-top">
+                            <label className="checkbox-touch-area">
+                              <input
+                                type="checkbox"
+                                className="item-check"
+                                checked={item.status === 'verified'}
+                                onChange={() => toggleVerify(item)}
+                              />
+                              <span className="rep-loc-name">📍 {item.location}</span>
+                            </label>
                             <span className={`status-badge ${item.status || 'pending'}`}>
                               {item.status === 'verified' && '✓ Verificado'}
                               {item.status === 'missing' && '✗ No está'}
@@ -509,21 +554,22 @@ export default function App() {
                               {(!item.status || item.status === 'pending') && 'Pendiente'}
                             </span>
                           </div>
-                          <div className="rep-col-actions">
+
+                          <p className="rep-name-text">{item.name}</p>
+
+                          <div className="rep-actions-bar">
                             <button
-                              className="btn-sm btn-primary-outline"
+                              className="touch-btn code"
                               onClick={() => openEditCodeModal(item)}
-                              title="Cambiar al código físico real"
                             >
-                              ✏️ Cambiar Código
+                              ✏️ Cambiar Código Real
                             </button>
                             {item.status !== 'displaced' && (
                               <button
-                                className="btn-sm warning"
+                                className="touch-btn warn"
                                 onClick={() => openDisplaceModal(item)}
-                                title="Indicar que está en otra área"
                               >
-                                Desplazado
+                                🚚 Mover
                               </button>
                             )}
                           </div>
@@ -540,28 +586,35 @@ export default function App() {
       {/* TAB: Desplazados */}
       {tab === 'desplazados' && (
         <div className="displaced-panel">
-          <h2>⚠️ Bienes Desplazados</h2>
-          <p className="subtitle">Bienes que están registrados en una ubicación pero se encontraron físicamente en otra</p>
+          <h2>⚠️ Bienes Desplazados ({displacedItems.length})</h2>
+          <p className="subtitle">Bienes que pertenecen a otra área pero fueron hallados físicamente en un lugar distinto.</p>
           {displacedItems.length === 0 && (
-            <div className="empty-state">No hay bienes desplazados registrados</div>
+            <div className="empty-state">No hay bienes desplazados registrados por el momento.</div>
           )}
-          {displacedItems.map(item => (
-            <div key={item.id} className="displaced-item">
-              <div className="displaced-code">{item.code}</div>
-              <div className="displaced-name">{item.name}</div>
-              <div className="displaced-locations">
-                Registrado en: <strong>{item.location}</strong> → Encontrado en: <span>{item.foundLocation}</span>
+          <div className="displaced-list">
+            {displacedItems.map(item => (
+              <div key={item.id} className="displaced-card">
+                <div className="displaced-header">
+                  <span className="item-code-text">{item.code}</span>
+                  <span className="badge-warn">Fuera de lugar</span>
+                </div>
+                <p className="item-name-text">{item.name}</p>
+                <div className="displaced-movement">
+                  <span className="loc-from">De: <strong>{item.location}</strong></span>
+                  <span className="arrow">➔</span>
+                  <span className="loc-to">Hallado en: <strong>{item.foundLocation}</strong></span>
+                </div>
+                <div className="displaced-actions">
+                  <button className="touch-btn reset" onClick={() => resetItem(item)}>
+                    ↺ Devolver a su estado original
+                  </button>
+                  <button className="touch-btn code" onClick={() => openEditCodeModal(item)}>
+                    ✏️ Corregir Código
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button className="btn-sm" onClick={() => resetItem(item)}>
-                  Resetear
-                </button>
-                <button className="btn-sm btn-edit-code" onClick={() => openEditCodeModal(item)}>
-                  ✏️ Corregir Código
-                </button>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
@@ -569,10 +622,13 @@ export default function App() {
       {tab === 'agregar' && (
         <div className="add-item-panel">
           <h2>Registrar Nuevo Bien</h2>
-          <div className="form-row">
+          <p className="subtitle">Solo ingresa código, nombre y ubicación:</p>
+
+          <div className="mobile-form">
             <div className="form-group">
-              <label>Código (Control Interno)</label>
+              <label>Código Interno</label>
               <input
+                inputMode="numeric"
                 value={newCode}
                 onChange={e => setNewCode(e.target.value)}
                 placeholder="Ej: 4951515"
@@ -583,13 +639,11 @@ export default function App() {
               <input
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
-                placeholder="Ej: Armario de metal 2 puertas"
+                placeholder="Ej: SILLA GIRATORIA NEGRA"
               />
             </div>
-          </div>
-          <div className="form-row">
             <div className="form-group">
-              <label>Ubicación</label>
+              <label>Ubicación (seleccionar existente)</label>
               <select value={newLocation} onChange={e => setNewLocation(e.target.value)}>
                 <option value="">Seleccionar ubicación...</option>
                 {allLocations.map(loc => (
@@ -597,77 +651,80 @@ export default function App() {
                 ))}
               </select>
             </div>
-            <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button className="btn btn-primary" onClick={addItem}>
-                ➕ Agregar Bien
-              </button>
-            </div>
-          </div>
-          <div className="form-row">
             <div className="form-group">
-              <label>O escribir nueva ubicación si no existe</label>
+              <label>O escribir una nueva ubicación:</label>
               <input
                 value={newLocation}
                 onChange={e => setNewLocation(e.target.value)}
-                placeholder="Ej: P1 · Laboratorio de Balística"
+                placeholder="Ej: P1 · Comedor"
               />
             </div>
+            <button className="btn btn-primary submit-btn" onClick={addItem}>
+              ➕ Registrar Bien
+            </button>
           </div>
         </div>
       )}
 
-      {/* Modal: Desplazar Ubicación */}
+      {/* MODAL: Desplazar Ubicación */}
       {modal?.type === 'displace' && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>📍 ¿Dónde se encontró este bien?</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-              <strong>{modal.item.code}</strong> — {modal.item.name}
-            </p>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Registrado originalmente en: <strong>{modal.item.location}</strong>
-            </p>
-            <label>Ubicación donde se encontró físicamente</label>
-            <select value={displaceLocation} onChange={e => setDisplaceLocation(e.target.value)}>
-              <option value="">Seleccionar ubicación...</option>
+            <h3>🚚 ¿Dónde se encontró este bien?</h3>
+            <div className="modal-info-box">
+              <div className="modal-code">{modal.item.code}</div>
+              <div className="modal-name">{modal.item.name}</div>
+              <div className="modal-loc">Registrado en: <strong>{modal.item.location}</strong></div>
+            </div>
+
+            <label className="modal-label">Selecciona dónde lo encontraste físicamente:</label>
+            <select
+              className="modal-select"
+              value={displaceLocation}
+              onChange={e => setDisplaceLocation(e.target.value)}
+            >
+              <option value="">Seleccionar área...</option>
               {allLocations.filter(l => l !== modal.item.location).map(loc => (
                 <option key={loc} value={loc}>{loc}</option>
               ))}
             </select>
+
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={confirmDisplace} disabled={!displaceLocation}>
-                Confirmar Desplazamiento
+              <button
+                className="btn btn-primary"
+                onClick={confirmDisplace}
+                disabled={!displaceLocation}
+              >
+                Confirmar
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal: Cambiar/Corregir Código */}
+      {/* MODAL: Cambiar/Corregir Código */}
       {modal?.type === 'editCode' && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>✏️ Cambiar / Corregir Código</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-              {modal.item.name}
-            </p>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-              Ubicación: <strong>{modal.item.location}</strong>
-            </p>
-            <label>Código actual</label>
-            <div style={{ fontFamily: 'monospace', color: 'var(--primary)', fontWeight: 600, marginBottom: 8 }}>
-              {modal.item.code}
+            <h3>✏️ Corregir Código Real</h3>
+            <div className="modal-info-box">
+              <div className="modal-name">{modal.item.name}</div>
+              <div className="modal-loc">Ubicación: <strong>{modal.item.location}</strong></div>
+              <div className="modal-prev-code">Código actual registrado: <span>{modal.item.code}</span></div>
             </div>
-            <label>Nuevo código real (revisado físicamente)</label>
+
+            <label className="modal-label">Ingresa el código que tiene grabado físicamente:</label>
             <input
               type="text"
               autoFocus
+              className="modal-input"
               value={editCodeValue}
               onChange={e => setEditCodeValue(e.target.value)}
-              placeholder="Ingresa el código correcto..."
+              placeholder="Ej: 4951011"
               onKeyDown={e => { if (e.key === 'Enter') confirmEditCode() }}
             />
+
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancelar</button>
               <button
