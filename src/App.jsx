@@ -114,11 +114,11 @@ export default function App() {
         list = list.filter(i => (i.status || 'pending') === statusFilter)
       }
     }
-    if (search) {
-      const s = search.toLowerCase()
+    if (search.trim()) {
+      const s = search.trim().toLowerCase()
       list = list.filter(i =>
-        (i.code && i.code.toLowerCase().includes(s)) ||
-        (i.name && i.name.toLowerCase().includes(s))
+        (i.code && String(i.code).toLowerCase().includes(s)) ||
+        (i.name && String(i.name).toLowerCase().includes(s))
       )
     }
     return list
@@ -354,15 +354,36 @@ export default function App() {
             return null
           })()}
 
-          {/* Barra de Filtros y Búsqueda */}
+          {/* Barra de Filtros y Búsqueda en vivo */}
           <div className="filter-search-bar">
-            <input
-              type="search"
-              className="search-box"
-              placeholder="🔍 Buscar código o nombre..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+            <div className="search-input-wrapper">
+              <input
+                type="text"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                className="search-box"
+                placeholder="🔍 Escribe código o nombre (filtra al instante)..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => setSearch('')}
+                  title="Limpiar búsqueda"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {search.trim() && (
+              <div className="search-live-indicator">
+                Resultados encontrados: <strong>{filteredItems.length}</strong>
+              </div>
+            )}
             <div className="quick-filters">
               <button
                 className={`filter-chip ${statusFilter === 'all' ? 'active' : ''}`}
