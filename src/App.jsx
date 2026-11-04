@@ -27,6 +27,7 @@ export default function App() {
 
   // New item form
   const [newCode, setNewCode] = useState('')
+  const [newSerie, setNewSerie] = useState('')
   const [newName, setNewName] = useState('')
   const [newLocation, setNewLocation] = useState('')
 
@@ -118,6 +119,7 @@ export default function App() {
       const s = search.trim().toLowerCase()
       list = list.filter(i =>
         (i.code && String(i.code).toLowerCase().includes(s)) ||
+        (i.serie && String(i.serie).toLowerCase().includes(s)) ||
         (i.name && String(i.name).toLowerCase().includes(s))
       )
     }
@@ -194,6 +196,7 @@ export default function App() {
       code: newCode.trim(),
       originalCode: newCode.trim(),
       name: newName.trim().toUpperCase(),
+      serie: newSerie.trim(),
       location: newLocation.trim(),
       status: 'pending',
       foundLocation: null,
@@ -201,6 +204,7 @@ export default function App() {
       source: 'manual'
     })
     setNewCode('')
+    setNewSerie('')
     setNewName('')
     setNewLocation('')
   }
@@ -428,7 +432,7 @@ export default function App() {
                   key={item.id}
                   className={`item-card ${item.status || 'pending'} ${isRep ? 'is-repeated-border' : ''}`}
                 >
-                  {/* Fila superior: Checkbox + Código + Badges */}
+                  {/* Fila superior: Checkbox + Código + Serie + Badges */}
                   <div className="item-card-header">
                     <label className="checkbox-touch-area" title="Marcar como verificado">
                       <input
@@ -437,7 +441,14 @@ export default function App() {
                         checked={item.status === 'verified'}
                         onChange={() => toggleVerify(item)}
                       />
-                      <span className="item-code-text">{item.code}</span>
+                      <div className="code-serie-wrapper">
+                        <span className="item-code-text">{item.code}</span>
+                        {item.serie && (
+                          <span className="item-serie-pill" title={`Serie: ${item.serie}`}>
+                            SN: {item.serie}
+                          </span>
+                        )}
+                      </div>
                     </label>
 
                     <div className="item-badges">
@@ -566,7 +577,14 @@ export default function App() {
                                 checked={item.status === 'verified'}
                                 onChange={() => toggleVerify(item)}
                               />
-                              <span className="rep-loc-name">📍 {item.location}</span>
+                              <div className="code-serie-wrapper">
+                                <span className="rep-loc-name">📍 {item.location}</span>
+                                {item.serie && (
+                                  <span className="item-serie-pill" title={`Serie: ${item.serie}`}>
+                                    SN: {item.serie}
+                                  </span>
+                                )}
+                              </div>
                             </label>
                             <span className={`status-badge ${item.status || 'pending'}`}>
                               {item.status === 'verified' && '✓ Verificado'}
@@ -616,7 +634,14 @@ export default function App() {
             {displacedItems.map(item => (
               <div key={item.id} className="displaced-card">
                 <div className="displaced-header">
-                  <span className="item-code-text">{item.code}</span>
+                  <div className="code-serie-wrapper">
+                    <span className="item-code-text">{item.code}</span>
+                    {item.serie && (
+                      <span className="item-serie-pill" title={`Serie: ${item.serie}`}>
+                        SN: {item.serie}
+                      </span>
+                    )}
+                  </div>
                   <span className="badge-warn">Fuera de lugar</span>
                 </div>
                 <p className="item-name-text">{item.name}</p>
@@ -653,6 +678,14 @@ export default function App() {
                 value={newCode}
                 onChange={e => setNewCode(e.target.value)}
                 placeholder="Ej: 4951515"
+              />
+            </div>
+            <div className="form-group">
+              <label>Número de Serie (opcional)</label>
+              <input
+                value={newSerie}
+                onChange={e => setNewSerie(e.target.value)}
+                placeholder="Ej: BEXHPOBVB935SC"
               />
             </div>
             <div className="form-group">
@@ -693,7 +726,10 @@ export default function App() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3>🚚 ¿Dónde se encontró este bien?</h3>
             <div className="modal-info-box">
-              <div className="modal-code">{modal.item.code}</div>
+              <div className="modal-code">
+                {modal.item.code}
+                {modal.item.serie && <span className="modal-serie-pill">SN: {modal.item.serie}</span>}
+              </div>
               <div className="modal-name">{modal.item.name}</div>
               <div className="modal-loc">Registrado en: <strong>{modal.item.location}</strong></div>
             </div>
@@ -732,7 +768,10 @@ export default function App() {
             <div className="modal-info-box">
               <div className="modal-name">{modal.item.name}</div>
               <div className="modal-loc">Ubicación: <strong>{modal.item.location}</strong></div>
-              <div className="modal-prev-code">Código actual registrado: <span>{modal.item.code}</span></div>
+              <div className="modal-prev-code">
+                Código actual: <span>{modal.item.code}</span>
+                {modal.item.serie && <span className="modal-serie-pill" style={{ marginLeft: 8 }}>SN: {modal.item.serie}</span>}
+              </div>
             </div>
 
             <label className="modal-label">Ingresa el código que tiene grabado físicamente:</label>

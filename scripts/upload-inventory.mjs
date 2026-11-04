@@ -52,6 +52,7 @@ async function upload() {
         code: item.code,
         originalCode: item.originalCode || item.code,
         name: item.name,
+        serie: item.serie || '',
         location: item.location,
         status: item.status || 'pending',
         foundLocation: item.foundLocation || null,
